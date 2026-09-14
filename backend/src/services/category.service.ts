@@ -2,13 +2,16 @@ import prisma from '../config/prisma';
 import { AppError } from '../utils/app.error';
 
 export class CategoryService {
-  async getCategories(tenantId: number) {
-    return prisma.propertyCategory.findMany({ where: { tenantId } });
+  async getCategories(tenantId?: number) {
+    if (tenantId) {
+      return prisma.propertyCategory.findMany({ where: { tenantId } });
+    }
+    return prisma.propertyCategory.findMany();
   }
 
   async createCategory(tenantId: number, data: { name: string }) {
     return prisma.propertyCategory.create({
-      data: { name: data.name, tenantId }
+      data: { name: data.name, tenantId },
     });
   }
 
@@ -19,14 +22,14 @@ export class CategoryService {
     }
     return prisma.propertyCategory.update({
       where: { id },
-      data: { name: data.name }
+      data: { name: data.name },
     });
   }
 
   async deleteCategory(id: number, tenantId: number) {
     const category = await prisma.propertyCategory.findUnique({
       where: { id },
-      include: { _count: { select: { properties: true } } }
+      include: { _count: { select: { properties: true } } },
     });
     if (!category || category.tenantId !== tenantId) {
       throw new AppError('Category not found or unauthorized', 404);

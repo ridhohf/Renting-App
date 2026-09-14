@@ -1,30 +1,27 @@
 import prisma from '../config/prisma';
 import { AppError } from '../utils/app.error';
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.helper';
-import { getLowestRoomPrice } from '../utils/price.helper';
+import { filterAvailableProperties, sortProperties, buildCalendarData } from '../helpers/property.helper';
 
 export class PropertyService {
   async getPublicProperties(query: any) {
     const { page = 1, limit = 10, sortBy, sortOrder } = query;
-    const skip = (Number(page) - 1) * Number(limit);
-    const take = Number(limit);
+    const checkIn = query.checkIn ? new Date(query.checkIn) : new Date();
+    const checkOut = query.checkOut ? new Date(query.checkOut) : new Date(Date.now() + 86400000);
+    const properties = await this.fetchCatalogProperties(query);
+    const available = filterAvailableProperties(properties, checkIn, checkOut);
+    const sorted = sortProperties(available, sortBy, sortOrder);
+    return this.paginateResults(sorted, Number(page), Number(limit));
+  }
 
-    const where = this.buildWhereClause(query);
-
-    const [properties, total] = await Promise.all([
-      prisma.property.findMany({
-        where,
-        include: { images: true, category: true, rooms: { include: { peakSeasonRates: true } } },
-        skip, take,
-        orderBy: sortBy === 'name' ? { name: sortOrder || 'asc' } : undefined,
-      }),
-      prisma.property.count({ where }),
-    ]);
-
-    const result = this.mapWithLowestPrice(properties, query);
-    if (sortBy === 'price') this.sortByPrice(result, sortOrder);
-
-    return { properties: result, meta: { page: Number(page), limit: take, total, totalPages: Math.ceil(total / take) } };
+  private fetchCatalogProperties(query: any) {
+    return prisma.property.findMany({
+      where: this.buildWhereClause(query),
+      include: {
+        images: true, category: true,
+        rooms: { include: { peakSeasonRates: true, unavailabilities: true, orders: true } },
+      },
+    });
   }
 
   private buildWhereClause(query: any) {
@@ -35,34 +32,51 @@ export class PropertyService {
     return where;
   }
 
-  private mapWithLowestPrice(properties: any[], query: any) {
-    const checkIn = query.checkIn ? new Date(query.checkIn) : new Date();
-    const checkOut = query.checkOut ? new Date(query.checkOut) : new Date(Date.now() + 86400000);
-    return properties.map((p) => ({
-      ...p,
-      lowestPrice: getLowestRoomPrice(p.rooms, checkIn, checkOut),
-    }));
+  private paginateResults(items: any[], page: number, limit: number) {
+    const skip = (page - 1) * limit;
+    const total = items.length;
+    const properties = items.slice(skip, skip + limit);
+    return { properties, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
-  private sortByPrice(result: any[], sortOrder: string) {
-    result.sort((a, b) =>
-      sortOrder === 'desc' ? b.lowestPrice - a.lowestPrice : a.lowestPrice - b.lowestPrice,
-    );
+  async getCities() {
+    const properties = await prisma.property.findMany({ select: { city: true }, distinct: ['city'] });
+    return properties.map((p) => p.city);
   }
 
   async getPropertyBySlug(slug: string) {
     const property = await prisma.property.findUnique({
       where: { slug },
-      include: { images: true, category: true, rooms: { include: { images: true } }, reviews: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } } },
+      include: {
+        images: true, category: true,
+        rooms: { include: { images: true, peakSeasonRates: true, unavailabilities: true } },
+        reviews: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
+      },
     });
     if (!property) throw new AppError('Property not found', 404);
-    const avgRating = this.calculateAvgRating(property.reviews);
+    const avgRating = property.reviews.length ? property.reviews.reduce((s, r) => s + r.rating, 0) / property.reviews.length : 0;
     return { ...property, avgRating };
   }
 
-  private calculateAvgRating(reviews: { rating: number }[]) {
-    if (reviews.length === 0) return 0;
-    return reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  async getPropertyCalendar(slug: string, month: number, year: number) {
+    const prop = await prisma.property.findUnique({
+      where: { slug },
+      include: { rooms: { include: { peakSeasonRates: true, unavailabilities: true } } },
+    });
+    if (!prop) throw new AppError('Property not found', 404);
+    const orders = await this.fetchCalendarOrders(prop.rooms.map((r) => r.id), month, year);
+    return buildCalendarData(prop.rooms, month, year, orders);
+  }
+
+  private fetchCalendarOrders(roomIds: number[], month: number, year: number) {
+    return prisma.order.findMany({
+      where: {
+        roomId: { in: roomIds },
+        status: { in: ['PROCESSED', 'COMPLETED', 'WAITING_PAYMENT', 'WAITING_CONFIRMATION'] },
+        checkInDate: { lte: new Date(year, month, 0) },
+        checkOutDate: { gte: new Date(year, month - 1, 1) },
+      },
+    });
   }
 
   async getTenantProperties(tenantId: number, query: any) {
@@ -97,8 +111,7 @@ export class PropertyService {
   private async generateSlug(name: string): Promise<string> {
     let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
     const existing = await prisma.property.findFirst({ where: { slug } });
-    if (existing) slug += '-' + Math.random().toString(36).substring(2, 6);
-    return slug;
+    return existing ? `${slug}-${Math.random().toString(36).substring(2, 6)}` : slug;
   }
 
   private async uploadPropertyImages(propertyId: number, files: Express.Multer.File[]) {

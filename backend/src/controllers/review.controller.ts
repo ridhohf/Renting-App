@@ -15,55 +15,31 @@ export class ReviewController {
 
   async createReview(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = Number((req as any).user.id);
       const { orderId, rating, comment } = req.body;
-      const data = await this.reviewService.createReview(userId, { orderId: Number(orderId), rating: Number(rating), comment });
+      const data = await this.reviewService.createReview(req.user!.id, { orderId: Number(orderId), rating: Number(rating), comment });
       sendSuccess(res, 201, { message: 'Review created', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async getPropertyReviews(req: Request, res: Response, next: NextFunction) {
     try {
-      const propertyId = req.query.propertyId as string;
-      if (!propertyId) throw new AppError('propertyId is required', 400);
-      const { page, limit, sortBy, sortOrder } = req.query;
-      const result = await this.reviewService.getPropertyReviews(Number(propertyId), {
-        page: Number(page) || 1,
-        limit: Number(limit) || 10,
-        sortBy: sortBy as string,
-        sortOrder: sortOrder as string,
-      });
+      if (!req.query.propertyId) throw new AppError('propertyId is required', 400);
+      const result = await this.reviewService.getPropertyReviews(Number(req.query.propertyId), req.query as any);
       sendSuccess(res, 200, { message: 'Property reviews retrieved', data: result.reviews, meta: result.meta });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async replyReview(req: Request, res: Response, next: NextFunction) {
     try {
-      const tenantId = Number((req as any).user.id);
-      const { id } = req.params;
-      const { reply } = req.body;
-      const data = await this.reviewService.replyReview(Number(id), tenantId, reply);
+      const data = await this.reviewService.replyReview(Number(req.params.id), req.user!.id, req.body.reply);
       sendSuccess(res, 200, { message: 'Review replied', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async getUserReviews(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = Number((req as any).user.id);
-      const { page, limit } = req.query;
-      const result = await this.reviewService.getUserReviews(userId, {
-        page: Number(page) || 1,
-        limit: Number(limit) || 10,
-      });
+      const result = await this.reviewService.getUserReviews(req.user!.id, req.query as any);
       sendSuccess(res, 200, { message: 'User reviews retrieved', data: result.reviews, meta: result.meta });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 }

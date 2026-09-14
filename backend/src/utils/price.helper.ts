@@ -1,31 +1,36 @@
-export function calculateRoomPrice(basePrice: number, checkIn: Date, checkOut: Date, peakSeasonRates: any[]): number {
-  let totalPrice = 0;
-  const base = Number(basePrice);
-  let currentDate = new Date(checkIn);
-
-  while (currentDate < checkOut) {
-    totalPrice += getDailyRate(base, currentDate, peakSeasonRates);
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-  return totalPrice;
+export function toDateString(date: Date | string): string {
+  return new Date(date).toISOString().slice(0, 10);
 }
 
-function getDailyRate(base: number, date: Date, rates: any[]): number {
-  const rate = rates.find((r) => date >= r.startDate && date <= r.endDate);
-  if (!rate) return base;
+function applyAdjustment(base: number, type: string, value: number): number {
+  if (type === 'PERCENTAGE') return base * (1 + value / 100);
+  return base + value;
+}
 
-  if (rate.adjustmentType === 'PERCENTAGE') {
-    return base * (1 + Number(rate.adjustmentValue) / 100);
+export function getDailyRate(base: number, date: Date, rates: any[] = []): number {
+  const day = toDateString(date);
+  const rate = rates.find((r) => {
+    return day >= toDateString(r.startDate) && day <= toDateString(r.endDate);
+  });
+  if (!rate) return base;
+  return applyAdjustment(base, rate.adjustmentType, Number(rate.adjustmentValue));
+}
+
+export function calculateRoomPrice(basePrice: number, checkIn: Date, checkOut: Date, peakRates: any[] = []): number {
+  let total = 0;
+  const curr = new Date(checkIn);
+  while (curr < checkOut) {
+    total += getDailyRate(Number(basePrice), curr, peakRates);
+    curr.setDate(curr.getDate() + 1);
   }
-  return base + Number(rate.adjustmentValue);
+  return total;
 }
 
 export function getLowestRoomPrice(rooms: any[], checkIn: Date, checkOut: Date): number {
-  if (!rooms || rooms.length === 0) return 0;
+  if (!rooms?.length) return 0;
   const nights = Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / 86400000));
-  const prices = rooms.map((room) =>
-    calculateRoomPrice(room.basePrice, checkIn, checkOut, room.peakSeasonRates || []) / nights,
-  );
+  const prices = rooms.map((room) => {
+    return calculateRoomPrice(room.basePrice, checkIn, checkOut, room.peakSeasonRates) / nights;
+  });
   return Math.min(...prices);
 }
-

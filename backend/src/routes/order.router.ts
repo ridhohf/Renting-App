@@ -3,33 +3,40 @@ import { OrderController } from '../controllers/order.controller';
 import { JwtVerify } from '../middlewares/jwt-verify.middleware';
 import { RoleGuard } from '../middlewares/role.middleware';
 import { ENV } from '../config/env.config';
-import { uploadImage } from '../middlewares/multer.middleware';
+import { uploadPaymentProof } from '../middlewares/multer.middleware';
+import { Validator } from '../middlewares/validator.middleware';
+import { createOrderSchema } from '../validations/order.validation';
 
 export class OrderRouter {
-  private router: Router;
-  private controller: OrderController;
+  private router = Router();
+  private controller = new OrderController();
 
   constructor() {
-    this.controller = new OrderController();
-    this.router = Router();
     this.initializeRoutes();
   }
 
   private initializeRoutes(): void {
     const verifyToken = JwtVerify.verifyToken(ENV.JWT_SECRET);
-    
-    // USER routes
-    this.router.post('/', verifyToken, RoleGuard.allow('USER'), this.controller.createOrder);
-    this.router.get('/user', verifyToken, RoleGuard.allow('USER'), this.controller.getUserOrders);
-    this.router.get('/user/:id', verifyToken, RoleGuard.allow('USER'), this.controller.getOrderById);
-    this.router.patch('/:id/payment-proof', verifyToken, RoleGuard.allow('USER'), uploadImage.single('paymentProof'), this.controller.uploadPaymentProof);
-    this.router.patch('/:id/cancel', verifyToken, RoleGuard.allow('USER'), this.controller.cancelOrder);
-    
-    // TENANT routes
-    this.router.get('/tenant', verifyToken, RoleGuard.allow('TENANT'), this.controller.getTenantOrders);
-    this.router.patch('/:id/confirm', verifyToken, RoleGuard.allow('TENANT'), this.controller.confirmPayment);
-    this.router.patch('/:id/reject', verifyToken, RoleGuard.allow('TENANT'), this.controller.rejectPayment);
-    this.router.patch('/:id/tenant-cancel', verifyToken, RoleGuard.allow('TENANT'), this.controller.cancelOrderByTenant);
+    this.setupUserRoutes(verifyToken);
+    this.setupTenantRoutes(verifyToken);
+  }
+
+  private setupUserRoutes(auth: any): void {
+    const guard = RoleGuard.allow('USER');
+    this.router.post('/', auth, guard, Validator.validate(createOrderSchema), this.controller.createOrder);
+    this.router.get('/user', auth, guard, this.controller.getUserOrders);
+    this.router.get('/user/:id', auth, guard, this.controller.getOrderById);
+    this.router.patch('/:id/payment-proof', auth, guard, uploadPaymentProof.single('paymentProof'), this.controller.uploadPaymentProof);
+    this.router.post('/:id/payment-gateway', auth, guard, this.controller.processPaymentGateway);
+    this.router.patch('/:id/cancel', auth, guard, this.controller.cancelOrder);
+  }
+
+  private setupTenantRoutes(auth: any): void {
+    const guard = RoleGuard.allow('TENANT');
+    this.router.get('/tenant', auth, guard, this.controller.getTenantOrders);
+    this.router.patch('/:id/confirm', auth, guard, this.controller.confirmPayment);
+    this.router.patch('/:id/reject', auth, guard, this.controller.rejectPayment);
+    this.router.patch('/:id/tenant-cancel', auth, guard, this.controller.cancelOrderByTenant);
   }
 
   getRouter(): Router {

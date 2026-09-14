@@ -10,6 +10,7 @@ export class OrderController {
     this.getUserOrders = this.getUserOrders.bind(this);
     this.getOrderById = this.getOrderById.bind(this);
     this.uploadPaymentProof = this.uploadPaymentProof.bind(this);
+    this.processPaymentGateway = this.processPaymentGateway.bind(this);
     this.cancelOrder = this.cancelOrder.bind(this);
     this.getTenantOrders = this.getTenantOrders.bind(this);
     this.confirmPayment = this.confirmPayment.bind(this);
@@ -42,6 +43,13 @@ export class OrderController {
     try {
       const data = await this.orderService.uploadPaymentProof(Number(req.params.id), req.user!.id, req.file!.path);
       sendSuccess(res, 200, { message: 'Payment proof uploaded', data });
+    } catch (error) { next(error); }
+  }
+
+  async processPaymentGateway(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await this.orderService.processPaymentGateway(Number(req.params.id), req.user!.id);
+      sendSuccess(res, 200, { message: 'Payment processed via gateway', data });
     } catch (error) { next(error); }
   }
 

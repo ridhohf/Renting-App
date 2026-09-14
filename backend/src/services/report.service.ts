@@ -1,50 +1,39 @@
 import prisma from '../config/prisma';
 import { Prisma } from '../generated/prisma';
+import { buildCalendarData } from '../helpers/property.helper';
 
 export class ReportService {
   async getSalesReport(tenantId: number, query: { startDate?: string; endDate?: string; sortBy?: string; sortOrder?: string }) {
-    const where: Prisma.OrderWhereInput = {
-      room: { property: { tenantId } },
-      status: { in: ['PROCESSED', 'COMPLETED'] },
-    };
-    
-    if (query.startDate && query.endDate) {
-      where.createdAt = {
-        gte: new Date(query.startDate),
-        lte: new Date(query.endDate),
-      };
-    }
-
-    const orderBy: Prisma.OrderOrderByWithRelationInput = {};
-    if (query.sortBy === 'totalAmount' || query.sortBy === 'totalPrice') {
-      orderBy.totalAmount = query.sortOrder === 'asc' ? 'asc' : 'desc';
-    } else {
-      orderBy.createdAt = query.sortOrder === 'asc' ? 'asc' : 'desc';
-    }
-
+    const where = this.buildSalesWhere(tenantId, query);
+    const orderBy = this.buildSalesOrderBy(query);
     const orders = await prisma.order.findMany({
-      where,
-      orderBy,
-      include: {
-        room: { include: { property: true } },
-        user: true,
-      },
+      where, orderBy,
+      include: { room: { include: { property: true } }, user: true },
     });
+    return { orders, byProperty: this.aggregateSalesByProperty(orders), byUser: this.aggregateSalesByUser(orders) };
+  }
 
-    const byProperty = this.aggregateSalesByProperty(orders);
-    const byUser = this.aggregateSalesByUser(orders);
+  private buildSalesWhere(tenantId: number, q: any): Prisma.OrderWhereInput {
+    const where: Prisma.OrderWhereInput = { room: { property: { tenantId } }, status: { in: ['PROCESSED', 'COMPLETED'] } };
+    if (q.startDate && q.endDate) {
+      where.createdAt = { gte: new Date(q.startDate), lte: new Date(q.endDate) };
+    }
+    return where;
+  }
 
-    return { orders, byProperty, byUser };
+  private buildSalesOrderBy(q: any): Prisma.OrderOrderByWithRelationInput {
+    const dir = q.sortOrder === 'asc' ? 'asc' : 'desc';
+    return q.sortBy === 'totalAmount' || q.sortBy === 'totalPrice' ? { totalAmount: dir } : { createdAt: dir };
   }
 
   private aggregateSalesByProperty(orders: any[]) {
     const map = new Map<number, { propertyName: string; totalRevenue: number; orderCount: number }>();
     for (const o of orders) {
       const p = o.room.property;
-      const current = map.get(p.id) || { propertyName: p.name, totalRevenue: 0, orderCount: 0 };
-      current.totalRevenue += Number(o.totalAmount);
-      current.orderCount += 1;
-      map.set(p.id, current);
+      const cur = map.get(p.id) || { propertyName: p.name, totalRevenue: 0, orderCount: 0 };
+      cur.totalRevenue += Number(o.totalAmount);
+      cur.orderCount += 1;
+      map.set(p.id, cur);
     }
     return Array.from(map.values());
   }
@@ -53,10 +42,10 @@ export class ReportService {
     const map = new Map<number, { userName: string; totalSpent: number; orderCount: number }>();
     for (const o of orders) {
       const u = o.user;
-      const current = map.get(u.id) || { userName: u.name, totalSpent: 0, orderCount: 0 };
-      current.totalSpent += Number(o.totalAmount);
-      current.orderCount += 1;
-      map.set(u.id, current);
+      const cur = map.get(u.id) || { userName: u.name, totalSpent: 0, orderCount: 0 };
+      cur.totalSpent += Number(o.totalAmount);
+      cur.orderCount += 1;
+      map.set(u.id, cur);
     }
     return Array.from(map.values());
   }
@@ -64,41 +53,21 @@ export class ReportService {
   async getPropertyReport(tenantId: number, propertyId: number, month: number, year: number) {
     const property = await prisma.property.findFirst({
       where: { id: propertyId, tenantId },
-      include: { rooms: true },
+      include: { rooms: { include: { peakSeasonRates: true, unavailabilities: true } } },
     });
     if (!property) return null;
-
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0);
-
-    const orders = await prisma.order.findMany({
-      where: {
-        roomId: { in: property.rooms.map((r) => r.id) },
-        status: { in: ['PROCESSED', 'COMPLETED'] },
-        checkInDate: { lte: endDate },
-        checkOutDate: { gte: startDate },
-      },
-    });
-
-    return this.buildCalendarData(property.rooms, month, year, orders);
+    const orders = await this.fetchMonthlyOrders(property.rooms.map((r) => r.id), month, year);
+    return buildCalendarData(property.rooms, month, year, orders);
   }
 
-  private buildCalendarData(rooms: any[], month: number, year: number, orders: any[]) {
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const calendar: any = {};
-    for (const room of rooms) {
-      calendar[room.id] = { roomName: room.name, days: [] };
-      for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(year, month - 1, day);
-        const isBooked = orders.some((o) => o.roomId === room.id && new Date(o.checkInDate) <= date && new Date(o.checkOutDate) > date);
-        calendar[room.id].days.push({
-          date: date.toISOString().split('T')[0],
-          isAvailable: !isBooked,
-          price: room.basePrice,
-          isBooked,
-        });
-      }
-    }
-    return calendar;
+  private fetchMonthlyOrders(roomIds: number[], month: number, year: number) {
+    return prisma.order.findMany({
+      where: {
+        roomId: { in: roomIds },
+        status: { in: ['PROCESSED', 'COMPLETED', 'WAITING_PAYMENT', 'WAITING_CONFIRMATION'] },
+        checkInDate: { lte: new Date(year, month, 0) },
+        checkOutDate: { gte: new Date(year, month - 1, 1) },
+      },
+    });
   }
 }

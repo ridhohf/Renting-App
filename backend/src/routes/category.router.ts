@@ -15,11 +15,13 @@ export class CategoryRouter {
   }
 
   private initializeRoutes(): void {
-    this.router.use(JwtVerify.verifyToken(ENV.JWT_SECRET), RoleGuard.allow('TENANT'));
-    this.router.get('/', this.categoryController.getCategories);
-    this.router.post('/', this.categoryController.createCategory);
-    this.router.put('/:id', this.categoryController.updateCategory);
-    this.router.delete('/:id', this.categoryController.deleteCategory);
+    const optionalAuth = JwtVerify.optionalVerifyToken(ENV.JWT_SECRET);
+    const tenantAuth = [JwtVerify.verifyToken(ENV.JWT_SECRET), RoleGuard.allow('TENANT')];
+
+    this.router.get('/', optionalAuth, this.categoryController.getCategories);
+    this.router.post('/', tenantAuth, this.categoryController.createCategory);
+    this.router.put('/:id', tenantAuth, this.categoryController.updateCategory);
+    this.router.delete('/:id', tenantAuth, this.categoryController.deleteCategory);
   }
 
   getRouter(): Router {
