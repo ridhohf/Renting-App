@@ -4,6 +4,8 @@ import { JwtVerify } from '../middlewares/jwt-verify.middleware';
 import { ENV } from '../config/env.config';
 import { uploadImage } from '../middlewares/multer.middleware';
 import { RoleGuard } from '../middlewares/role.middleware';
+import { Validator } from '../middlewares/validator.middleware';
+import { updateProfileSchema, changePasswordSchema, changeEmailSchema } from '../validations/user.validation';
 
 export class UserRouter {
   private router: Router;
@@ -22,10 +24,10 @@ export class UserRouter {
     this.router.use(authMiddleware, roleMiddleware);
     
     this.router.get('/profile', this.userController.getProfile);
-    this.router.patch('/profile', this.userController.updateProfile);
+    this.router.patch('/profile', Validator.validate(updateProfileSchema), this.userController.updateProfile);
     this.router.patch('/avatar', uploadImage.single('avatar'), this.userController.updateAvatar);
-    this.router.patch('/password', this.userController.changePassword);
-    this.router.patch('/email', this.userController.changeEmail);
+    this.router.patch('/password', Validator.validate(changePasswordSchema), this.userController.changePassword);
+    this.router.patch('/email', Validator.validate(changeEmailSchema), this.userController.changeEmail);
   }
 
   getRouter(): Router {

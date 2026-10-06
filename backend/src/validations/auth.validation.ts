@@ -8,7 +8,7 @@ export const registerSchema = z.object({
 
 export const verifySchema = z.object({
   token: z.string().min(1, 'Token is required'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
 });
 
 export const loginSchema = z.object({
@@ -31,4 +31,5 @@ export const resendVerificationSchema = z.object({
 
 export const googleLoginSchema = z.object({
   token: z.string().min(1, 'Google token is required'),
+  role: z.enum(['USER', 'TENANT']).optional(),
 });

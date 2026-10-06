@@ -21,7 +21,7 @@ export function calculateRoomPrice(basePrice: number, checkIn: Date, checkOut: D
   const curr = new Date(checkIn);
   while (curr < checkOut) {
     total += getDailyRate(Number(basePrice), curr, peakRates);
-    curr.setDate(curr.getDate() + 1);
+    curr.setUTCDate(curr.getUTCDate() + 1);
   }
   return total;
 }

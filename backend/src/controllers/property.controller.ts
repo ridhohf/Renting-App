@@ -63,7 +63,8 @@ export class PropertyController {
 
   async updateProperty(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await this.propertyService.updateProperty(Number(req.params.id), req.user!.id, req.body);
+      const files = (req.files as Express.Multer.File[]) || [];
+      const data = await this.propertyService.updateProperty(Number(req.params.id), req.user!.id, req.body, files);
       sendSuccess(res, 200, { message: 'Property updated', data });
     } catch (error) { next(error); }
   }

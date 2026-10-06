@@ -59,8 +59,12 @@ export class RoomService {
   }
 
   async deleteRoom(id: number, tenantId: number) {
-    const room = await prisma.room.findUnique({ where: { id }, include: { property: true, images: true } });
+    const room = await prisma.room.findUnique({
+      where: { id },
+      include: { property: true, images: true, _count: { select: { orders: true } } },
+    });
     if (!room || room.property.tenantId !== tenantId) throw new AppError('Not found or unauthorized', 404);
+    if (room._count.orders > 0) throw new AppError('Cannot delete room that already has orders', 400);
 
     for (const img of room.images) {
       if (img.imageUrl) await deleteFromCloudinary(img.imageUrl);

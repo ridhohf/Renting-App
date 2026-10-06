@@ -1,22 +1,31 @@
-import { calculateRoomPrice, getLowestRoomPrice, toDateString, getDailyRate } from '../utils/price.helper';
+import { getLowestRoomPrice, toDateString, getDailyRate } from '../utils/price.helper';
 
-export function filterAvailableProperties(properties: any[], checkIn: Date, checkOut: Date): any[] {
+export function filterAvailableProperties(properties: any[], checkIn: Date, checkOut: Date, guests = 1): any[] {
   return properties
     .map((p) => {
-      const availableRooms = p.rooms.filter((room: any) => isRoomAvailable(room, checkIn, checkOut));
+      const availableRooms = p.rooms.filter((room: any) => room.capacity >= guests && isRoomAvailable(room, checkIn, checkOut));
       if (availableRooms.length === 0) return null;
-      return { ...p, rooms: availableRooms, lowestPrice: getLowestRoomPrice(availableRooms, checkIn, checkOut) };
+      const lowestPrice = getLowestRoomPrice(availableRooms, checkIn, checkOut);
+      return { ...p, rooms: availableRooms.map(toPublicRoom), lowestPrice };
     })
     .filter(Boolean);
 }
 
-function isRoomAvailable(room: any, checkIn: Date, checkOut: Date): boolean {
+function toPublicRoom(room: any) {
+  const { orders, unavailabilities, peakSeasonRates, ...publicRoom } = room;
+  return publicRoom;
+}
+
+export function isBlockedByUnavailability(unavailabilities: any[] = [], checkIn: Date, checkOut: Date): boolean {
   const inStr = toDateString(checkIn);
   const outStr = toDateString(checkOut);
-  const isBlocked = room.unavailabilities?.some((u: any) => {
-    return inStr < toDateString(u.endDate) && outStr > toDateString(u.startDate);
-  });
-  if (isBlocked) return false;
+  return unavailabilities.some((u: any) => inStr <= toDateString(u.endDate) && outStr > toDateString(u.startDate));
+}
+
+function isRoomAvailable(room: any, checkIn: Date, checkOut: Date): boolean {
+  if (isBlockedByUnavailability(room.unavailabilities, checkIn, checkOut)) return false;
+  const inStr = toDateString(checkIn);
+  const outStr = toDateString(checkOut);
   const activeOrders = room.orders?.filter((o: any) => {
     return o.status !== 'CANCELLED' && inStr < toDateString(o.checkOutDate) && outStr > toDateString(o.checkInDate);
   });
@@ -34,13 +43,17 @@ export function sortProperties(items: any[], sortBy?: string, sortOrder: string 
   return items;
 }
 
+export function getMonthRange(month: number, year: number) {
+  return { start: new Date(Date.UTC(year, month - 1, 1)), end: new Date(Date.UTC(year, month, 0)) };
+}
+
 export function buildCalendarData(rooms: any[], month: number, year: number, orders: any[]) {
-  const daysInMonth = new Date(year, month, 0).getDate();
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const calendar: any = {};
   for (const room of rooms) {
     const days = [];
     for (let d = 1; d <= daysInMonth; d++) {
-      days.push(buildRoomDay(room, new Date(year, month - 1, d), orders));
+      days.push(buildRoomDay(room, new Date(Date.UTC(year, month - 1, d)), orders));
     }
     calendar[room.id] = { roomId: room.id, roomName: room.name, days };
   }

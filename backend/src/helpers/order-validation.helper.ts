@@ -1,6 +1,7 @@
 import prisma from '../config/prisma';
 import { AppError } from '../utils/app.error';
-import { calculateRoomPrice, toDateString } from '../utils/price.helper';
+import { calculateRoomPrice } from '../utils/price.helper';
+import { isBlockedByUnavailability } from './property.helper';
 
 export async function validateRoomAvailability(roomId: number, checkIn: Date, checkOut: Date, guests: number) {
   const room = await prisma.room.findUnique({
@@ -9,19 +10,11 @@ export async function validateRoomAvailability(roomId: number, checkIn: Date, ch
   });
   if (!room) throw new AppError('Room not found', 404);
   if (room.capacity < guests) throw new AppError('Room capacity is insufficient', 400);
-
-  checkUnavailability(room.unavailabilities, checkIn, checkOut);
+  if (isBlockedByUnavailability(room.unavailabilities, checkIn, checkOut)) {
+    throw new AppError('Room is unavailable for these dates', 400);
+  }
   await checkBookingCapacity(roomId, room.totalUnits, checkIn, checkOut);
   return room;
-}
-
-function checkUnavailability(unavailabilities: { startDate: Date; endDate: Date }[], checkIn: Date, checkOut: Date): void {
-  const inStr = toDateString(checkIn);
-  const outStr = toDateString(checkOut);
-  const isUnavailable = unavailabilities.some((u) => {
-    return inStr < toDateString(u.endDate) && outStr > toDateString(u.startDate);
-  });
-  if (isUnavailable) throw new AppError('Room is unavailable for these dates', 400);
 }
 
 async function checkBookingCapacity(roomId: number, units: number, checkIn: Date, checkOut: Date): Promise<void> {

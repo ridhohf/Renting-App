@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { OrderService } from '../services/order.service';
 import { sendSuccess } from '../utils/response.helper';
+import { AppError } from '../utils/app.error';
 
 export class OrderController {
   private orderService = new OrderService();
@@ -41,7 +42,8 @@ export class OrderController {
 
   async uploadPaymentProof(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await this.orderService.uploadPaymentProof(Number(req.params.id), req.user!.id, req.file!.path);
+      if (!req.file) throw new AppError('Payment proof image is required', 400);
+      const data = await this.orderService.uploadPaymentProof(Number(req.params.id), req.user!.id, req.file.path);
       sendSuccess(res, 200, { message: 'Payment proof uploaded', data });
     } catch (error) { next(error); }
   }
@@ -83,7 +85,7 @@ export class OrderController {
 
   async cancelOrderByTenant(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await this.orderService.cancelOrderByTenant(Number(req.params.id), req.user!.id);
+      const data = await this.orderService.cancelOrderByTenant(Number(req.params.id), req.user!.id, req.body?.reason);
       sendSuccess(res, 200, { message: 'Order cancelled by tenant', data });
     } catch (error) { next(error); }
   }

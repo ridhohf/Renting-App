@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { AppError } from '../utils/app.error';
 import { AuthService } from '../services/auth.service';
 import { sendSuccess } from '../utils/response.helper';
 
@@ -78,8 +77,8 @@ export class AuthController {
 
   async googleLogin(req: Request, res: Response, next: NextFunction) {
     try {
-      const { token } = req.body;
-      const data = await this.authService.googleLogin(token);
+      const { token, role } = req.body;
+      const data = await this.authService.googleLogin(token, role);
       sendSuccess(res, 200, { message: 'Google login successful', data });
     } catch (error) {
       next(error);

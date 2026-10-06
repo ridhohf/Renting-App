@@ -14,8 +14,8 @@ export class PeakSeasonService {
   }
 
   private validateDates(start?: string, end?: string): void {
-    if (start && end && new Date(start) >= new Date(end)) {
-      throw new AppError('Start date must be before end date', 400);
+    if (start && end && new Date(start) > new Date(end)) {
+      throw new AppError('Start date must be on or before end date', 400);
     }
   }
 
