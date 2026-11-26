@@ -27,8 +27,8 @@ export class PropertyRouter {
     this.router.get('/:slug', this.propertyController.getPropertyBySlug);
 
     this.router.post('/', tenantAuth, uploadImage.array('images', 5), Validator.validate(createPropertySchema), this.propertyController.createProperty);
-    this.router.put('/:id', tenantAuth, uploadImage.array('images', 5), Validator.validate(updatePropertySchema), this.propertyController.updateProperty);
-    this.router.delete('/:id', tenantAuth, this.propertyController.deleteProperty);
+    this.router.put('/:id', tenantAuth, Validator.validateIdParam(), uploadImage.array('images', 5), Validator.validate(updatePropertySchema), this.propertyController.updateProperty);
+    this.router.delete('/:id', tenantAuth, Validator.validateIdParam(), this.propertyController.deleteProperty);
   }
 
   getRouter(): Router {

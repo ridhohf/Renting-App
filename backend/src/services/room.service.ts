@@ -1,6 +1,6 @@
 import prisma from '../config/prisma';
 import { AppError } from '../utils/app.error';
-import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.helper';
+import { uploadToCloudinary, deleteFromCloudinary, removeLocalTempFiles } from '../utils/cloudinary.helper';
 
 export class RoomService {
   async getRoomsByProperty(propertyId: number) {
@@ -17,16 +17,21 @@ export class RoomService {
   }
 
   async createRoom(propertyId: number, tenantId: number, data: any, imageFiles: Express.Multer.File[]) {
-    await this.verifyPropertyOwnership(propertyId, tenantId);
-    const room = await prisma.room.create({
-      data: {
-        propertyId, name: data.name, description: data.description,
-        capacity: Number(data.capacity), basePrice: Number(data.basePrice),
-        totalUnits: Number(data.totalUnits || 1),
-      },
-    });
-    await this.uploadRoomImages(room.id, imageFiles);
-    return room;
+    try {
+      await this.verifyPropertyOwnership(propertyId, tenantId);
+      const room = await prisma.room.create({
+        data: {
+          propertyId, name: data.name, description: data.description,
+          capacity: Number(data.capacity), basePrice: Number(data.basePrice),
+          totalUnits: Number(data.totalUnits || 1),
+        },
+      });
+      await this.uploadRoomImages(room.id, imageFiles);
+      return room;
+    } catch (error) {
+      await removeLocalTempFiles(imageFiles);
+      throw error;
+    }
   }
 
   private async verifyPropertyOwnership(propertyId: number, tenantId: number) {
@@ -42,30 +47,34 @@ export class RoomService {
     }
   }
 
-  async updateRoom(id: number, tenantId: number, data: any) {
-    const room = await prisma.room.findUnique({ where: { id }, include: { property: true } });
-    if (!room || room.property.tenantId !== tenantId) throw new AppError('Not found or unauthorized', 404);
+  async updateRoom(id: number, tenantId: number, data: any, imageFiles: Express.Multer.File[] = []) {
+    try {
+      const room = await prisma.room.findUnique({ where: { id }, include: { property: true } });
+      if (!room || room.property.tenantId !== tenantId) throw new AppError('Not found or unauthorized', 404);
+      const updated = await prisma.room.update({ where: { id }, data: this.buildUpdateData(data) });
+      await this.uploadRoomImages(id, imageFiles);
+      return updated;
+    } catch (error) {
+      await removeLocalTempFiles(imageFiles);
+      throw error;
+    }
+  }
 
-    return prisma.room.update({
-      where: { id },
-      data: {
-        ...(data.name && { name: data.name }),
-        ...(data.description && { description: data.description }),
-        ...(data.capacity && { capacity: Number(data.capacity) }),
-        ...(data.basePrice && { basePrice: Number(data.basePrice) }),
-        ...(data.totalUnits && { totalUnits: Number(data.totalUnits) }),
-      },
-    });
+  private buildUpdateData(data: any) {
+    return {
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.capacity !== undefined && { capacity: Number(data.capacity) }),
+      ...(data.basePrice !== undefined && { basePrice: Number(data.basePrice) }),
+      ...(data.totalUnits !== undefined && { totalUnits: Number(data.totalUnits) }),
+    };
   }
 
   async deleteRoom(id: number, tenantId: number) {
-    const room = await prisma.room.findUnique({
-      where: { id },
-      include: { property: true, images: true, _count: { select: { orders: true } } },
-    });
+    const room = await prisma.room.findUnique({ where: { id }, include: { property: true, images: true } });
     if (!room || room.property.tenantId !== tenantId) throw new AppError('Not found or unauthorized', 404);
-    if (room._count.orders > 0) throw new AppError('Cannot delete room that already has orders', 400);
-
+    const orderCount = await prisma.order.count({ where: { roomId: id } });
+    if (orderCount > 0) throw new AppError('Cannot delete room with existing orders', 400);
     for (const img of room.images) {
       if (img.imageUrl) await deleteFromCloudinary(img.imageUrl);
     }

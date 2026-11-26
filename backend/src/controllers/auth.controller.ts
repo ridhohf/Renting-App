@@ -20,9 +20,7 @@ export class AuthController {
       const { email, name, role } = req.body;
       const user = await this.authService.register({ email, name, role });
       sendSuccess(res, 201, { message: 'Registration successful', data: user });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async verifyEmail(req: Request, res: Response, next: NextFunction) {
@@ -30,29 +28,22 @@ export class AuthController {
       const { token, password } = req.body;
       await this.authService.verifyAndSetPassword(token, password);
       sendSuccess(res, 200, { message: 'Email verified and password set successfully' });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async login(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email, password } = req.body;
-      const data = await this.authService.login(email, password);
+      const { email, password, role } = req.body;
+      const data = await this.authService.login(email, password, role);
       sendSuccess(res, 200, { message: 'Login successful', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async forgotPassword(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email } = req.body;
-      const data = await this.authService.forgotPassword(email);
+      const data = await this.authService.forgotPassword(req.body.email);
       sendSuccess(res, 200, { message: data.message });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async resetPassword(req: Request, res: Response, next: NextFunction) {
@@ -60,28 +51,21 @@ export class AuthController {
       const { token, password } = req.body;
       await this.authService.resetPassword(token, password);
       sendSuccess(res, 200, { message: 'Password reset successfully' });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async resendVerification(req: Request, res: Response, next: NextFunction) {
     try {
-      const { email } = req.body;
-      const data = await this.authService.resendVerification(email);
+      const data = await this.authService.resendVerification(req.body.email);
       sendSuccess(res, 200, { message: data.message });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async googleLogin(req: Request, res: Response, next: NextFunction) {
     try {
       const { token, role } = req.body;
-      const data = await this.authService.googleLogin(token, role);
+      const data = await this.authService.googleLogin(token, role || 'USER', role);
       sendSuccess(res, 200, { message: 'Google login successful', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 }

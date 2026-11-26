@@ -17,5 +17,6 @@ export async function sendMail(options: MailOptions): Promise<void> {
     });
   } catch (error: any) {
     console.warn(`[MAILER WARNING] Failed to send email to ${options.to}:`, error?.message || error);
+    console.log(`[MAILER FALLBACK PREVIEW] Subject: "${options.subject}"`);
   }
 }

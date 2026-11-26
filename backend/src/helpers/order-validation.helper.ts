@@ -1,20 +1,32 @@
 import prisma from '../config/prisma';
 import { AppError } from '../utils/app.error';
-import { calculateRoomPrice } from '../utils/price.helper';
-import { isBlockedByUnavailability } from './property.helper';
+import { calculateRoomPrice, toDateString } from '../utils/price.helper';
 
-export async function validateRoomAvailability(roomId: number, checkIn: Date, checkOut: Date, guests: number) {
+export async function validateRoomAvailability(
+  propertyId: number,
+  roomId: number,
+  checkIn: Date,
+  checkOut: Date,
+  guests: number,
+) {
   const room = await prisma.room.findUnique({
     where: { id: roomId },
     include: { unavailabilities: true, peakSeasonRates: true },
   });
-  if (!room) throw new AppError('Room not found', 404);
+  if (!room || room.propertyId !== propertyId) throw new AppError('Room not found in this property', 404);
   if (room.capacity < guests) throw new AppError('Room capacity is insufficient', 400);
-  if (isBlockedByUnavailability(room.unavailabilities, checkIn, checkOut)) {
-    throw new AppError('Room is unavailable for these dates', 400);
-  }
+  checkUnavailability(room.unavailabilities, checkIn, checkOut);
   await checkBookingCapacity(roomId, room.totalUnits, checkIn, checkOut);
   return room;
+}
+
+function checkUnavailability(unavailabilities: { startDate: Date; endDate: Date }[], checkIn: Date, checkOut: Date): void {
+  const inStr = toDateString(checkIn);
+  const outStr = toDateString(checkOut);
+  const isUnavailable = unavailabilities.some((u) => {
+    return inStr <= toDateString(u.endDate) && outStr > toDateString(u.startDate);
+  });
+  if (isUnavailable) throw new AppError('Room is unavailable for these dates', 400);
 }
 
 async function checkBookingCapacity(roomId: number, units: number, checkIn: Date, checkOut: Date): Promise<void> {
@@ -30,7 +42,7 @@ async function checkBookingCapacity(roomId: number, units: number, checkIn: Date
 }
 
 export function calculateTotalPrice(room: any, checkIn: Date, checkOut: Date) {
-  const totalNights = Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 3600 * 24)));
+  const totalNights = Math.max(1, Math.round((checkOut.getTime() - checkIn.getTime()) / 86400000));
   const totalPrice = calculateRoomPrice(room.basePrice, checkIn, checkOut, room.peakSeasonRates);
   return { totalPrice, totalNights };
 }

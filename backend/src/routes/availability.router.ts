@@ -20,8 +20,8 @@ export class AvailabilityRouter {
     this.router.use(JwtVerify.verifyToken(ENV.JWT_SECRET), RoleGuard.allow('TENANT'));
     this.router.get('/', this.controller.getUnavailabilities);
     this.router.post('/', Validator.validate(createAvailabilitySchema), this.controller.createUnavailability);
-    this.router.put('/:id', Validator.validate(updateAvailabilitySchema), this.controller.updateUnavailability);
-    this.router.delete('/:id', this.controller.deleteUnavailability);
+    this.router.put('/:id', Validator.validateIdParam(), Validator.validate(updateAvailabilitySchema), this.controller.updateUnavailability);
+    this.router.delete('/:id', Validator.validateIdParam(), this.controller.deleteUnavailability);
   }
 
   getRouter(): Router {

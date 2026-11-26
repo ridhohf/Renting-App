@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 export const registerSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().trim().email('Invalid email address'),
+  name: z.string().trim().min(2, 'Name must be at least 2 characters'),
   role: z.enum(['USER', 'TENANT'], { required_error: 'Role must be USER or TENANT' }),
 });
 
@@ -12,12 +12,13 @@ export const verifySchema = z.object({
 });
 
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  role: z.enum(['USER', 'TENANT']).optional(),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().email('Invalid email address'),
 });
 
 export const resetPasswordSchema = z.object({
@@ -26,7 +27,7 @@ export const resetPasswordSchema = z.object({
 });
 
 export const resendVerificationSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().email('Invalid email address'),
 });
 
 export const googleLoginSchema = z.object({

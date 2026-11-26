@@ -13,12 +13,18 @@ export async function uploadToCloudinary(filePath: string, folder: string): Prom
   }
 }
 
-async function removeLocalTempFile(filePath: string): Promise<void> {
+export async function removeLocalTempFile(filePath?: string): Promise<void> {
+  if (!filePath) return;
   try {
     if (fs.existsSync(filePath)) await fs.promises.unlink(filePath);
   } catch {
     // Ignore error if temp file cleanup fails
   }
+}
+
+export async function removeLocalTempFiles(files?: Express.Multer.File[]): Promise<void> {
+  if (!files?.length) return;
+  await Promise.all(files.map((f) => removeLocalTempFile(f.path)));
 }
 
 export async function deleteFromCloudinary(imageUrl: string): Promise<void> {

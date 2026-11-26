@@ -23,20 +23,23 @@ export class OrderRouter {
 
   private setupUserRoutes(auth: any): void {
     const guard = RoleGuard.allow('USER');
+    const idParam = Validator.validateIdParam();
     this.router.post('/', auth, guard, Validator.validate(createOrderSchema), this.controller.createOrder);
     this.router.get('/user', auth, guard, this.controller.getUserOrders);
-    this.router.get('/user/:id', auth, guard, this.controller.getOrderById);
-    this.router.patch('/:id/payment-proof', auth, guard, uploadPaymentProof.single('paymentProof'), this.controller.uploadPaymentProof);
-    this.router.post('/:id/payment-gateway', auth, guard, this.controller.processPaymentGateway);
-    this.router.patch('/:id/cancel', auth, guard, this.controller.cancelOrder);
+    this.router.get('/user/:id', auth, guard, idParam, this.controller.getOrderById);
+    this.router.patch('/:id/payment-proof', auth, guard, idParam, uploadPaymentProof.single('paymentProof'), this.controller.uploadPaymentProof);
+    this.router.post('/:id/payment-gateway', auth, guard, idParam, this.controller.processPaymentGateway);
+    this.router.patch('/:id/cancel', auth, guard, idParam, this.controller.cancelOrder);
   }
 
   private setupTenantRoutes(auth: any): void {
     const guard = RoleGuard.allow('TENANT');
+    const idParam = Validator.validateIdParam();
     this.router.get('/tenant', auth, guard, this.controller.getTenantOrders);
-    this.router.patch('/:id/confirm', auth, guard, this.controller.confirmPayment);
-    this.router.patch('/:id/reject', auth, guard, this.controller.rejectPayment);
-    this.router.patch('/:id/tenant-cancel', auth, guard, this.controller.cancelOrderByTenant);
+    this.router.get('/tenant/:id', auth, guard, idParam, this.controller.getTenantOrderById);
+    this.router.patch('/:id/confirm', auth, guard, idParam, this.controller.confirmPayment);
+    this.router.patch('/:id/reject', auth, guard, idParam, this.controller.rejectPayment);
+    this.router.patch('/:id/tenant-cancel', auth, guard, idParam, this.controller.cancelOrderByTenant);
   }
 
   getRouter(): Router {

@@ -8,20 +8,21 @@ export class PeakSeasonService {
     if (!room || room.property.tenantId !== tenantId) throw new AppError('Room not found or unauthorized', 404);
   }
 
-  private async verifyPeakSeasonOwnership(id: number, tenantId: number): Promise<void> {
+  private async verifyPeakSeasonOwnership(id: number, tenantId: number): Promise<PeakSeasonRate> {
     const peak = await prisma.peakSeasonRate.findUnique({ where: { id }, include: { room: { include: { property: true } } } });
     if (!peak || peak.room.property.tenantId !== tenantId) throw new AppError('Peak season not found or unauthorized', 404);
+    return peak;
   }
 
-  private validateDates(start?: string, end?: string): void {
-    if (start && end && new Date(start) > new Date(end)) {
+  private validateDates(start: Date | string, end: Date | string): void {
+    if (new Date(start) > new Date(end)) {
       throw new AppError('Start date must be on or before end date', 400);
     }
   }
 
   async getPeakSeasons(roomId: number, tenantId: number): Promise<PeakSeasonRate[]> {
     await this.verifyOwnership(roomId, tenantId);
-    return prisma.peakSeasonRate.findMany({ where: { roomId } });
+    return prisma.peakSeasonRate.findMany({ where: { roomId }, orderBy: { startDate: 'asc' } });
   }
 
   async createPeakSeason(roomId: number, tenantId: number, data: any): Promise<PeakSeasonRate> {
@@ -36,8 +37,10 @@ export class PeakSeasonService {
   }
 
   async updatePeakSeason(id: number, tenantId: number, data: any): Promise<PeakSeasonRate> {
-    await this.verifyPeakSeasonOwnership(id, tenantId);
-    this.validateDates(data.startDate, data.endDate);
+    const existing = await this.verifyPeakSeasonOwnership(id, tenantId);
+    const start = data.startDate ?? existing.startDate;
+    const end = data.endDate ?? existing.endDate;
+    this.validateDates(start, end);
     return prisma.peakSeasonRate.update({
       where: { id },
       data: {

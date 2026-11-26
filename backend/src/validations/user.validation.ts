@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const updateProfileSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100),
 });
 
 export const changePasswordSchema = z.object({
@@ -10,5 +10,5 @@ export const changePasswordSchema = z.object({
 });
 
 export const changeEmailSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().email('Invalid email address'),
 });

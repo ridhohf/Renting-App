@@ -20,8 +20,8 @@ export class PeakSeasonRouter {
     this.router.use(JwtVerify.verifyToken(ENV.JWT_SECRET), RoleGuard.allow('TENANT'));
     this.router.get('/', this.controller.getPeakSeasons);
     this.router.post('/', Validator.validate(createPeakSeasonSchema), this.controller.createPeakSeason);
-    this.router.put('/:id', Validator.validate(updatePeakSeasonSchema), this.controller.updatePeakSeason);
-    this.router.delete('/:id', this.controller.deletePeakSeason);
+    this.router.put('/:id', Validator.validateIdParam(), Validator.validate(updatePeakSeasonSchema), this.controller.updatePeakSeason);
+    this.router.delete('/:id', Validator.validateIdParam(), this.controller.deletePeakSeason);
   }
 
   getRouter(): Router {

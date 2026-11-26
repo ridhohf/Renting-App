@@ -8,20 +8,21 @@ export class AvailabilityService {
     if (!room || room.property.tenantId !== tenantId) throw new AppError('Room not found or unauthorized', 404);
   }
 
-  private async verifyUnavailabilityOwnership(id: number, tenantId: number): Promise<void> {
+  private async verifyUnavailabilityOwnership(id: number, tenantId: number): Promise<RoomUnavailability> {
     const item = await prisma.roomUnavailability.findUnique({ where: { id }, include: { room: { include: { property: true } } } });
     if (!item || item.room.property.tenantId !== tenantId) throw new AppError('Unavailability not found or unauthorized', 404);
+    return item;
   }
 
-  private validateDates(start?: string, end?: string): void {
-    if (start && end && new Date(start) > new Date(end)) {
+  private validateDates(start: Date | string, end: Date | string): void {
+    if (new Date(start) > new Date(end)) {
       throw new AppError('Start date must be on or before end date', 400);
     }
   }
 
   async getUnavailabilities(roomId: number, tenantId: number): Promise<RoomUnavailability[]> {
     await this.verifyOwnership(roomId, tenantId);
-    return prisma.roomUnavailability.findMany({ where: { roomId } });
+    return prisma.roomUnavailability.findMany({ where: { roomId }, orderBy: { startDate: 'asc' } });
   }
 
   async createUnavailability(roomId: number, tenantId: number, data: any): Promise<RoomUnavailability> {
@@ -33,8 +34,10 @@ export class AvailabilityService {
   }
 
   async updateUnavailability(id: number, tenantId: number, data: any): Promise<RoomUnavailability> {
-    await this.verifyUnavailabilityOwnership(id, tenantId);
-    this.validateDates(data.startDate, data.endDate);
+    const existing = await this.verifyUnavailabilityOwnership(id, tenantId);
+    const start = data.startDate ?? existing.startDate;
+    const end = data.endDate ?? existing.endDate;
+    this.validateDates(start, end);
     return prisma.roomUnavailability.update({
       where: { id },
       data: {

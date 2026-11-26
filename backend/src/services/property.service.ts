@@ -1,51 +1,51 @@
 import prisma from '../config/prisma';
 import { Prisma } from '../generated/prisma';
 import { AppError } from '../utils/app.error';
-import { uploadPropertyImages, replacePropertyImages, deleteImagesFromCloudinary } from '../utils/property-image.helper';
-import { filterAvailableProperties, sortProperties, buildCalendarData, getMonthRange } from '../helpers/property.helper';
+import { uploadToCloudinary, deleteFromCloudinary, removeLocalTempFiles } from '../utils/cloudinary.helper';
+import { geocodeLocation } from '../utils/geocode.helper';
+import { toUtcDate } from '../utils/price.helper';
+import { filterAvailableProperties, sortProperties, buildCalendarData } from '../helpers/property.helper';
 
 export class PropertyService {
   async getPublicProperties(query: any) {
     const { page = 1, limit = 10, sortBy, sortOrder } = query;
-    const { checkIn, checkOut } = this.parseSearchDates(query);
+    const { checkIn, checkOut } = this.parseSearchDates(query.checkIn, query.checkOut);
+    const guestCount = query.guestCount || query.guests ? Number(query.guestCount || query.guests) : undefined;
     const properties = await this.fetchCatalogProperties(query);
-    const available = filterAvailableProperties(properties, checkIn, checkOut, Number(query.guestCount) || 1);
-    const sorted = sortProperties(available, sortBy, sortOrder);
-    return this.paginateResults(sorted, Number(page) || 1, Number(limit) || 10);
+    const available = filterAvailableProperties(properties, checkIn, checkOut, guestCount);
+    return this.paginateResults(sortProperties(available, sortBy, sortOrder), Number(page), Number(limit));
   }
 
-  private parseSearchDates(query: any) {
-    const checkIn = query.checkIn ? new Date(query.checkIn) : new Date();
-    const checkOut = query.checkOut ? new Date(query.checkOut) : new Date(checkIn.getTime() + 86400000);
-    if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime())) throw new AppError('Invalid date format', 400);
-    if (checkIn >= checkOut) throw new AppError('checkOut must be after checkIn', 400);
+  private parseSearchDates(rawIn?: string, rawOut?: string) {
+    const checkIn = rawIn ? toUtcDate(rawIn) : toUtcDate(new Date());
+    const defaultOut = new Date(checkIn.getTime() + 86400000);
+    const checkOut = rawOut ? toUtcDate(rawOut) : defaultOut;
+    if (checkIn >= checkOut) throw new AppError('Check-out must be after check-in', 400);
     return { checkIn, checkOut };
   }
 
   private fetchCatalogProperties(query: any) {
-    const orders = { where: { status: { not: 'CANCELLED' as const } }, select: { status: true, checkInDate: true, checkOutDate: true } };
     return prisma.property.findMany({
       where: this.buildWhereClause(query),
-      include: { images: true, category: true, rooms: { include: { peakSeasonRates: true, unavailabilities: true, orders } } },
+      include: {
+        images: true, category: true,
+        rooms: { include: { peakSeasonRates: { orderBy: { createdAt: 'desc' } }, unavailabilities: true, orders: true } },
+      },
     });
   }
 
   private buildWhereClause(query: any) {
-    const where: any = {};
-    if (query.city) where.city = { contains: query.city, mode: 'insensitive' };
-    if (query.search) where.name = { contains: query.search, mode: 'insensitive' };
+    const where: Prisma.PropertyWhereInput = {};
+    if (query.city) where.city = { contains: String(query.city), mode: 'insensitive' };
+    if (query.search) where.name = { contains: String(query.search), mode: 'insensitive' };
     if (query.categoryId) where.categoryId = Number(query.categoryId);
     return where;
   }
 
   private paginateResults(items: any[], page: number, limit: number) {
     const skip = (page - 1) * limit;
-    const properties = items.slice(skip, skip + limit);
-    return { properties, meta: this.buildMeta(page, limit, items.length) };
-  }
-
-  private buildMeta(page: number, limit: number, total: number) {
-    return { page, limit, total, totalPages: Math.ceil(total / limit) };
+    const total = items.length;
+    return { properties: items.slice(skip, skip + limit), meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
   async getCities() {
@@ -57,9 +57,9 @@ export class PropertyService {
     const property = await prisma.property.findUnique({
       where: { slug },
       include: {
-        images: true, category: true,
-        rooms: { include: { images: true, peakSeasonRates: true, unavailabilities: true } },
-        reviews: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
+        images: true, category: true, tenant: { select: { id: true, name: true, avatarUrl: true } },
+        rooms: { include: { images: true, peakSeasonRates: { orderBy: { createdAt: 'desc' } }, unavailabilities: true } },
+        reviews: { orderBy: { createdAt: 'desc' }, include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
       },
     });
     if (!property) throw new AppError('Property not found', 404);
@@ -68,10 +68,9 @@ export class PropertyService {
   }
 
   async getPropertyCalendar(slug: string, month: number, year: number) {
-    if (month < 1 || month > 12) throw new AppError('Month must be between 1 and 12', 400);
     const prop = await prisma.property.findUnique({
       where: { slug },
-      include: { rooms: { include: { peakSeasonRates: true, unavailabilities: true } } },
+      include: { rooms: { include: { peakSeasonRates: { orderBy: { createdAt: 'desc' } }, unavailabilities: true } } },
     });
     if (!prop) throw new AppError('Property not found', 404);
     const orders = await this.fetchCalendarOrders(prop.rooms.map((r) => r.id), month, year);
@@ -79,57 +78,62 @@ export class PropertyService {
   }
 
   private fetchCalendarOrders(roomIds: number[], month: number, year: number) {
-    const { start, end } = getMonthRange(month, year);
     return prisma.order.findMany({
-      where: { roomId: { in: roomIds }, status: { not: 'CANCELLED' }, checkInDate: { lte: end }, checkOutDate: { gt: start } },
-      select: { roomId: true, checkInDate: true, checkOutDate: true },
+      where: {
+        roomId: { in: roomIds },
+        status: { in: ['PROCESSED', 'COMPLETED', 'WAITING_PAYMENT', 'WAITING_CONFIRMATION'] },
+        checkInDate: { lte: new Date(Date.UTC(year, month, 0)) },
+        checkOutDate: { gte: new Date(Date.UTC(year, month - 1, 1)) },
+      },
     });
   }
 
   async getTenantProperties(tenantId: number, query: any) {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 10;
-    const where = this.buildTenantWhere(tenantId, query);
+    const where: Prisma.PropertyWhereInput = { ...this.buildWhereClause(query), tenantId };
+    const orderBy: Prisma.PropertyOrderByWithRelationInput = query.sortBy === 'name'
+      ? { name: query.sortOrder === 'asc' ? 'asc' : 'desc' }
+      : { createdAt: query.sortOrder === 'asc' ? 'asc' : 'desc' };
     const [properties, total] = await Promise.all([
-      prisma.property.findMany({
-        where, orderBy: this.buildTenantOrderBy(query), skip: (page - 1) * limit, take: limit,
-        include: { images: true, category: true, rooms: { include: { images: true } } },
-      }),
+      prisma.property.findMany({ where, orderBy, include: { images: true, category: true, rooms: { include: { images: true } }, _count: { select: { rooms: true } } }, skip: (page - 1) * limit, take: limit }),
       prisma.property.count({ where }),
     ]);
-    return { properties, meta: this.buildMeta(page, limit, total) };
-  }
-
-  private buildTenantWhere(tenantId: number, query: any) {
-    const where: any = { tenantId };
-    if (query.search) where.name = { contains: query.search, mode: 'insensitive' };
-    if (query.categoryId) where.categoryId = Number(query.categoryId);
-    return where;
-  }
-
-  private buildTenantOrderBy(query: any): Prisma.PropertyOrderByWithRelationInput {
-    const dir: Prisma.SortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
-    return query.sortBy === 'name' ? { name: dir } : { createdAt: dir };
+    return { properties, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
   async createProperty(tenantId: number, data: any, imageFiles: Express.Multer.File[]) {
-    if (!imageFiles?.length) throw new AppError('At least one property picture is required', 400);
-    await this.verifyCategoryOwnership(Number(data.categoryId), tenantId);
-    const slug = await this.generateSlug(data.name);
-    const property = await prisma.property.create({
-      data: {
-        name: data.name, slug, description: data.description, categoryId: Number(data.categoryId),
-        tenantId, address: data.address, city: data.city, province: data.province || '',
-        latitude: data.latitude ?? null, longitude: data.longitude ?? null,
-      },
-    });
-    await uploadPropertyImages(property.id, imageFiles);
-    return property;
+    try {
+      await this.ensureCategoryExists(Number(data.categoryId));
+      const slug = await this.generateSlug(data.name);
+      const coords = await this.resolveCoords(data);
+      const property = await prisma.property.create({ data: this.buildCreateData(tenantId, data, slug, coords) });
+      await this.uploadPropertyImages(property.id, imageFiles);
+      return property;
+    } catch (error) {
+      await removeLocalTempFiles(imageFiles);
+      throw error;
+    }
   }
 
-  private async verifyCategoryOwnership(categoryId: number, tenantId: number): Promise<void> {
-    const category = await prisma.propertyCategory.findUnique({ where: { id: categoryId } });
-    if (!category || category.tenantId !== tenantId) throw new AppError('Category not found or unauthorized', 404);
+  private buildCreateData(tenantId: number, data: any, slug: string, coords: { latitude: number | null; longitude: number | null }) {
+    return {
+      name: data.name, slug, description: data.description, categoryId: Number(data.categoryId),
+      tenantId, address: data.address, city: data.city, province: data.province || '',
+      latitude: coords.latitude, longitude: coords.longitude,
+    };
+  }
+
+  private async resolveCoords(data: any) {
+    if (data.latitude !== undefined && data.longitude !== undefined) {
+      return { latitude: Number(data.latitude), longitude: Number(data.longitude) };
+    }
+    return geocodeLocation(data.city, data.province);
+  }
+
+  private async ensureCategoryExists(categoryId: number) {
+    const cat = await prisma.propertyCategory.findUnique({ where: { id: categoryId } });
+    if (!cat) throw new AppError('Property category not found', 404);
   }
 
   private async generateSlug(name: string): Promise<string> {
@@ -138,28 +142,47 @@ export class PropertyService {
     return existing ? `${slug}-${Math.random().toString(36).substring(2, 6)}` : slug;
   }
 
-  private async findOwnedProperty(id: number, tenantId: number) {
-    const prop = await prisma.property.findUnique({ where: { id }, include: { images: true, _count: { select: { orders: true } } } });
-    if (!prop || prop.tenantId !== tenantId) throw new AppError('Not found or unauthorized', 404);
-    return prop;
+  private async uploadPropertyImages(propertyId: number, files: Express.Multer.File[]) {
+    if (!files?.length) return;
+    for (let i = 0; i < files.length; i++) {
+      const imageUrl = await uploadToCloudinary(files[i].path, 'properties');
+      await prisma.propertyImage.create({ data: { propertyId, imageUrl, sortOrder: i } });
+    }
   }
 
   async updateProperty(id: number, tenantId: number, data: any, imageFiles: Express.Multer.File[] = []) {
-    await this.findOwnedProperty(id, tenantId);
-    if (data.categoryId) await this.verifyCategoryOwnership(Number(data.categoryId), tenantId);
-    const { name, description, categoryId, address, city, province, latitude, longitude } = data;
-    const updated = await prisma.property.update({
-      where: { id },
-      data: { name, description, categoryId, address, city, province, latitude, longitude },
-    });
-    if (imageFiles.length) await replacePropertyImages(id, imageFiles);
-    return updated;
+    try {
+      const prop = await prisma.property.findUnique({ where: { id } });
+      if (!prop || prop.tenantId !== tenantId) throw new AppError('Not found or unauthorized', 404);
+      if (data.categoryId !== undefined) await this.ensureCategoryExists(Number(data.categoryId));
+      const updated = await prisma.property.update({ where: { id }, data: this.buildUpdateData(data) });
+      await this.uploadPropertyImages(id, imageFiles);
+      return updated;
+    } catch (error) {
+      await removeLocalTempFiles(imageFiles);
+      throw error;
+    }
+  }
+
+  private buildUpdateData(data: any): Prisma.PropertyUncheckedUpdateInput {
+    return {
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.description !== undefined && { description: data.description }),
+      ...(data.categoryId !== undefined && { categoryId: Number(data.categoryId) }),
+      ...(data.address !== undefined && { address: data.address }),
+      ...(data.city !== undefined && { city: data.city }),
+      ...(data.province !== undefined && { province: data.province }),
+      ...(data.latitude !== undefined && { latitude: Number(data.latitude) }),
+      ...(data.longitude !== undefined && { longitude: Number(data.longitude) }),
+    };
   }
 
   async deleteProperty(id: number, tenantId: number) {
-    const prop = await this.findOwnedProperty(id, tenantId);
-    if (prop._count.orders > 0) throw new AppError('Cannot delete property that already has orders', 400);
-    await deleteImagesFromCloudinary(prop.images);
+    const prop = await prisma.property.findUnique({ where: { id }, include: { images: true } });
+    if (!prop || prop.tenantId !== tenantId) throw new AppError('Not found or unauthorized', 404);
+    const orderCount = await prisma.order.count({ where: { propertyId: id } });
+    if (orderCount > 0) throw new AppError('Cannot delete property with existing orders', 400);
+    for (const img of prop.images) await deleteFromCloudinary(img.imageUrl);
     return prisma.property.delete({ where: { id } });
   }
 }

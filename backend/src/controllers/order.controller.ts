@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
+import { AppError } from '../utils/app.error';
 import { OrderService } from '../services/order.service';
 import { sendSuccess } from '../utils/response.helper';
-import { AppError } from '../utils/app.error';
 
 export class OrderController {
   private orderService = new OrderService();
@@ -14,6 +14,7 @@ export class OrderController {
     this.processPaymentGateway = this.processPaymentGateway.bind(this);
     this.cancelOrder = this.cancelOrder.bind(this);
     this.getTenantOrders = this.getTenantOrders.bind(this);
+    this.getTenantOrderById = this.getTenantOrderById.bind(this);
     this.confirmPayment = this.confirmPayment.bind(this);
     this.rejectPayment = this.rejectPayment.bind(this);
     this.cancelOrderByTenant = this.cancelOrderByTenant.bind(this);
@@ -42,7 +43,7 @@ export class OrderController {
 
   async uploadPaymentProof(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.file) throw new AppError('Payment proof image is required', 400);
+      if (!req.file) throw new AppError('Payment proof file is required', 400);
       const data = await this.orderService.uploadPaymentProof(Number(req.params.id), req.user!.id, req.file.path);
       sendSuccess(res, 200, { message: 'Payment proof uploaded', data });
     } catch (error) { next(error); }
@@ -69,6 +70,13 @@ export class OrderController {
     } catch (error) { next(error); }
   }
 
+  async getTenantOrderById(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await this.orderService.getTenantOrderById(Number(req.params.id), req.user!.id);
+      sendSuccess(res, 200, { message: 'Order fetched', data });
+    } catch (error) { next(error); }
+  }
+
   async confirmPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await this.orderService.confirmPayment(Number(req.params.id), req.user!.id);
@@ -85,7 +93,7 @@ export class OrderController {
 
   async cancelOrderByTenant(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await this.orderService.cancelOrderByTenant(Number(req.params.id), req.user!.id, req.body?.reason);
+      const data = await this.orderService.cancelOrderByTenant(Number(req.params.id), req.user!.id);
       sendSuccess(res, 200, { message: 'Order cancelled by tenant', data });
     } catch (error) { next(error); }
   }

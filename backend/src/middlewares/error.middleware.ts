@@ -1,34 +1,40 @@
 import { Request, Response, NextFunction } from 'express';
 import { MulterError } from 'multer';
-import { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
-import { Prisma } from '../generated/prisma';
 import { AppError } from '../utils/app.error';
 
-const MULTER_MESSAGES: Record<string, string> = {
-  LIMIT_FILE_SIZE: 'File size must not exceed 1MB',
-  LIMIT_UNEXPECTED_FILE: 'Unexpected file field or too many files',
-};
+function mapKnownError(err: Error): { status: number; message: string } | null {
+  if (err instanceof AppError) return { status: err.statusCode, message: err.message };
+  if (err instanceof MulterError) return mapMulterError(err);
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    return { status: 400, message: 'Invalid or expired token' };
+  }
+  if (err instanceof SyntaxError && 'body' in err) {
+    return { status: 400, message: 'Invalid JSON payload' };
+  }
+  return mapPrismaError(err as { code?: string });
+}
 
-function resolveKnownError(err: Error): AppError | null {
-  if (err instanceof AppError) return err;
-  if (err instanceof MulterError) return new AppError(MULTER_MESSAGES[err.code] || err.message, 400);
-  if (err instanceof TokenExpiredError) return new AppError('Token has expired', 400);
-  if (err instanceof JsonWebTokenError) return new AppError('Invalid token', 400);
-  if (err instanceof Prisma.PrismaClientKnownRequestError) return resolvePrismaError(err);
+function mapMulterError(err: MulterError): { status: number; message: string } {
+  const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File size exceeds 1MB limit' : err.message;
+  return { status: 400, message: msg };
+}
+
+function mapPrismaError(err: { code?: string }): { status: number; message: string } | null {
+  if (err.code === 'P2002') return { status: 409, message: 'Duplicate record already exists' };
+  if (err.code === 'P2025') return { status: 404, message: 'Record not found' };
+  if (err.code === 'P2003') return { status: 400, message: 'Invalid or referenced record' };
   return null;
 }
 
-function resolvePrismaError(err: Prisma.PrismaClientKnownRequestError): AppError | null {
-  if (err.code === 'P2002') return new AppError('Data already exists', 409);
-  if (err.code === 'P2003') return new AppError('Data is still referenced by other records', 400);
-  if (err.code === 'P2025') return new AppError('Data not found', 404);
-  return null;
-}
-
-export function errorMiddleware(err: Error, _req: Request, res: Response, _next: NextFunction): void {
-  const known = resolveKnownError(err);
-  if (known) {
-    res.status(known.statusCode).json({ success: false, message: known.message });
+export function errorMiddleware(
+  err: Error,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+): void {
+  const mapped = mapKnownError(err);
+  if (mapped) {
+    res.status(mapped.status).json({ success: false, message: mapped.message });
     return;
   }
   console.error('Unhandled Error:', err);

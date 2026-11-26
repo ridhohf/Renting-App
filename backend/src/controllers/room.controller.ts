@@ -20,47 +20,36 @@ export class RoomController {
       if (!propertyId) throw new AppError('propertyId is required', 400);
       const data = await this.roomService.getRoomsByProperty(Number(propertyId));
       sendSuccess(res, 200, { message: 'Rooms fetched', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async getRoomById(req: Request, res: Response, next: NextFunction) {
     try {
       const data = await this.roomService.getRoomById(Number(req.params.id));
       sendSuccess(res, 200, { message: 'Room fetched', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async createRoom(req: Request, res: Response, next: NextFunction) {
     try {
-      const tenantId = (req as any).user.id;
-      const data = await this.roomService.createRoom(Number(req.body.propertyId), tenantId, req.body, req.files as any[]);
+      const files = (req.files as Express.Multer.File[]) || [];
+      const data = await this.roomService.createRoom(Number(req.body.propertyId), req.user!.id, req.body, files);
       sendSuccess(res, 201, { message: 'Room created', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async updateRoom(req: Request, res: Response, next: NextFunction) {
     try {
-      const tenantId = (req as any).user.id;
-      const data = await this.roomService.updateRoom(Number(req.params.id), tenantId, req.body);
+      const files = (req.files as Express.Multer.File[]) || [];
+      const data = await this.roomService.updateRoom(Number(req.params.id), req.user!.id, req.body, files);
       sendSuccess(res, 200, { message: 'Room updated', data });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 
   async deleteRoom(req: Request, res: Response, next: NextFunction) {
     try {
-      const tenantId = (req as any).user.id;
-      await this.roomService.deleteRoom(Number(req.params.id), tenantId);
+      await this.roomService.deleteRoom(Number(req.params.id), req.user!.id);
       sendSuccess(res, 200, { message: 'Room deleted', data: null });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   }
 }

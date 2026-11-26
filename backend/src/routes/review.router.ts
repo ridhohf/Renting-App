@@ -19,7 +19,7 @@ export class ReviewRouter {
     this.router.get('/', this.controller.getPropertyReviews);
     this.router.get('/user', auth, RoleGuard.allow('USER'), this.controller.getUserReviews);
     this.router.post('/', auth, RoleGuard.allow('USER'), Validator.validate(createReviewSchema), this.controller.createReview);
-    this.router.post('/:id/reply', auth, RoleGuard.allow('TENANT'), Validator.validate(replyReviewSchema), this.controller.replyReview);
+    this.router.post('/:id/reply', auth, RoleGuard.allow('TENANT'), Validator.validateIdParam(), Validator.validate(replyReviewSchema), this.controller.replyReview);
   }
 
   getRouter(): Router {

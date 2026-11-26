@@ -20,9 +20,9 @@ export class UserRouter {
   private initializeRoutes(): void {
     const authMiddleware = JwtVerify.verifyToken(ENV.JWT_SECRET);
     const roleMiddleware = RoleGuard.allow('USER', 'TENANT');
-    
+
     this.router.use(authMiddleware, roleMiddleware);
-    
+
     this.router.get('/profile', this.userController.getProfile);
     this.router.patch('/profile', Validator.validate(updateProfileSchema), this.userController.updateProfile);
     this.router.patch('/avatar', uploadImage.single('avatar'), this.userController.updateAvatar);

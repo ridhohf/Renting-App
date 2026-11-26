@@ -21,11 +21,11 @@ export class RoomRouter {
     const tenantAuth = [JwtVerify.verifyToken(ENV.JWT_SECRET), RoleGuard.allow('TENANT')];
 
     this.router.get('/', this.roomController.getRoomsByProperty);
-    this.router.get('/:id', this.roomController.getRoomById);
+    this.router.get('/:id', Validator.validateIdParam(), this.roomController.getRoomById);
 
     this.router.post('/', tenantAuth, uploadImage.array('images', 5), Validator.validate(createRoomSchema), this.roomController.createRoom);
-    this.router.put('/:id', tenantAuth, Validator.validate(updateRoomSchema), this.roomController.updateRoom);
-    this.router.delete('/:id', tenantAuth, this.roomController.deleteRoom);
+    this.router.put('/:id', tenantAuth, Validator.validateIdParam(), uploadImage.array('images', 5), Validator.validate(updateRoomSchema), this.roomController.updateRoom);
+    this.router.delete('/:id', tenantAuth, Validator.validateIdParam(), this.roomController.deleteRoom);
   }
 
   getRouter(): Router {
